@@ -62,6 +62,7 @@ class PipelineManagerTab(QWidget):
         - project: current project in the software
         - scan_list: list of the selected database files
         - iteration_table_scans_list: list of the scans contained in the iteration table
+        - main_window: main window of the software
 
     Methods:
         - undo: undo the last action made on the current pipeline editor
@@ -73,6 +74,7 @@ class PipelineManagerTab(QWidget):
         - updateProcessLibrary: updates the library of processes when a pipeline is saved
         - loadPipeline: loads a pipeline to the pipeline editor
         - savePipeline: saves the current pipeline of the pipeline editor
+        - savePipelineAs: saves the current pipeline of the pipeline editor under another name
         - loadParameters: loads pipeline parameters to the current pipeline of the pipeline editor
         - saveParameters: save the pipeline parameters of the the current pipeline of the pipeline editor
         - initPipeline: initializes the current pipeline of the pipeline editor
@@ -132,6 +134,9 @@ class PipelineManagerTab(QWidget):
         self.save_pipeline_action = QAction("Save pipeline", self)
         self.save_pipeline_action.triggered.connect(self.savePipeline)
 
+        self.save_pipeline_as_action = QAction("Save pipeline as", self)
+        self.save_pipeline_as_action.triggered.connect(self.savePipelineAs)
+
         self.load_pipeline_parameters_action = QAction("Load pipeline parameters", self)
         self.load_pipeline_parameters_action.triggered.connect(self.loadParameters)
 
@@ -150,6 +155,7 @@ class PipelineManagerTab(QWidget):
         self.tags_menu = QMenu()
         self.tags_menu.addAction(self.load_pipeline_action)
         self.tags_menu.addAction(self.save_pipeline_action)
+        self.tags_menu.addAction(self.save_pipeline_as_action)
         self.tags_menu.addSeparator()
         self.tags_menu.addAction(self.load_pipeline_parameters_action)
         self.tags_menu.addAction(self.save_pipeline_parameters_action)
@@ -159,6 +165,7 @@ class PipelineManagerTab(QWidget):
 
         if config.get_clinical_mode() == 'yes':
             self.save_pipeline_action.setDisabled(True)
+            self.save_pipeline_as_action.setDisabled(True)
 
         self.tags_tool_button = QtWidgets.QToolButton()
         self.tags_tool_button.setText('Pipeline')
@@ -410,9 +417,11 @@ class PipelineManagerTab(QWidget):
         if config.get_clinical_mode() == 'yes':
             self.processLibrary.setHidden(True)
             self.save_pipeline_action.setDisabled(True)
+            self.save_pipeline_as_action.setDisabled(True)
         else:
             self.processLibrary.setHidden(False)
             self.save_pipeline_action.setDisabled(False)
+            self.save_pipeline_as_action.setDisabled(False)
 
     def update_scans_list(self, iteration_list):
         """
@@ -517,9 +526,14 @@ class PipelineManagerTab(QWidget):
         package = 'User_processes'
         path = os.path.relpath(os.path.join(filename_folder, '..'))
 
+        # If the pipeline has already been saved
+        if 'User_processes.' + module_name in sys.modules.keys():
+            del sys.modules['User_processes.' + module_name]  # removing the previous version of the module
+            __import__('User_processes')  # this adds the new module version to the sys.modules dictionary
+
         # Adding the module path to the system path
         if path not in sys.path:
-            sys.path.append(path)
+            sys.path.insert(0, path)
 
         self.processLibrary.pkg_library.add_package(package, class_name)
         if os.path.relpath(path) not in self.processLibrary.pkg_library.paths:
@@ -537,6 +551,18 @@ class PipelineManagerTab(QWidget):
     def savePipeline(self):
         """
         Saves the current pipeline of the pipeline editor
+
+        :return:
+        """
+        filename = self.pipelineEditorTabs.get_current_filename()
+        if filename:
+            self.pipelineEditorTabs.save_pipeline(new_file_name=filename)
+        else:
+            self.pipelineEditorTabs.save_pipeline()
+
+    def savePipelineAs(self):
+        """
+        Saves the current pipeline of the pipeline editor under another name
 
         :return:
         """
@@ -927,7 +953,6 @@ class PipelineManagerTab(QWidget):
             else:
                 self.main_window.statusBar().showMessage(
                     'Pipeline "{0}" has been correctly run.'.format(name))
-
 
     def displayNodeParameters(self, node_name, process):
         """

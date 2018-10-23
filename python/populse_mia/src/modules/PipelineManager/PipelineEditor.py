@@ -71,6 +71,7 @@ class PipelineEditorTabs(QtWidgets.QTabWidget):
         - open_filter: opens a filter widget
         - export_to_db_scans: exports the input of a filter to "database_scans"
         - check_modifications: checks if the nodes of the current pipeline have been modified
+        - has_pipeline_nodes: checks if any of the pipelines in the editor tabs have pipeline nodes
 
     """
 
@@ -381,17 +382,32 @@ class PipelineEditorTabs(QtWidgets.QTabWidget):
 
         return self.get_current_editor().scene.pipeline
 
-    def save_pipeline(self):
+    def save_pipeline(self, new_file_name=None):
         """
         Saves the pipeline of the current editor
 
         :return:
         """
 
-        new_file_name = os.path.basename(self.get_current_editor().save_pipeline())
+        if new_file_name is None:
+            # Doing a "Save as" action
+            new_file_name = os.path.basename(self.get_current_editor().save_pipeline())
 
-        if new_file_name and os.path.basename(self.get_current_filename()) != new_file_name:
-            self.setTabText(self.currentIndex(), new_file_name)
+            if new_file_name and os.path.basename(self.get_current_filename()) != new_file_name:
+                self.setTabText(self.currentIndex(), new_file_name)
+        else:
+            # Saving the current pipeline
+            pipeline = self.get_current_pipeline()
+            posdict = dict([(key, (value.x(), value.y())) \
+                            for key, value in six.iteritems(self.get_current_editor().scene.pos)])
+            old_pos = pipeline.node_position
+            pipeline.node_position = posdict
+            save_pipeline(pipeline, new_file_name)
+            self.get_current_editor()._pipeline_filename = unicode(new_file_name)
+            pipeline.node_position = old_pos
+
+            self.pipeline_saved.emit(new_file_name)
+            self.setTabText(self.currentIndex(), os.path.basename(new_file_name))
 
     def load_pipeline(self, filename=None):
         """
@@ -503,6 +519,7 @@ class PipelineEditorTabs(QtWidgets.QTabWidget):
         :param editor: editor
         :return:
         """
+
         self.undos[editor] = editor.undos
         self.redos[editor] = editor.redos
         self.setTabText(self.currentIndex(), self.get_current_tab_name() + " *")  # make sure the " *" is there
@@ -593,6 +610,21 @@ class PipelineEditorTabs(QtWidgets.QTabWidget):
             self.widget(current_index).check_modifications()
         except AttributeError:
             pass
+
+    def has_pipeline_nodes(self):
+        """
+        Checks if any of the pipelines in the editor tabs have pipeline nodes
+
+        :return: True or False depending on if there are nodes in the editors
+        """
+        for idx in range(self.count()):
+            p_e = self.widget(idx)
+            if hasattr(p_e, 'scene'):
+                # if the widget is a tab editor
+                if p_e.scene.pipeline.nodes[''].plugs:
+                    return True
+
+        return False
 
 
 class PipelineEditor(PipelineDevelopperView):
@@ -807,43 +839,44 @@ class PipelineEditor(PipelineDevelopperView):
         # Collecting the links from the node that is being deleted
         links = []
         for plug_name, plug in node.plugs.items():
-            for link_to in plug.links_to:
-                (dest_node_name, dest_parameter, dest_node, dest_plug,
-                 weak_link) = link_to
-                active = plug.activated
+            if plug.output:
+                for link_to in plug.links_to:
+                    (dest_node_name, dest_parameter, dest_node, dest_plug,
+                     weak_link) = link_to
+                    active = plug.activated
 
-                # Looking for the name of dest_plug in dest_node
-                dest_plug_name = None
-                for plug_name_d, plug_d in dest_node.plugs.items():
-                    if plug_d == dest_plug:
-                        dest_plug_name = plug_name_d
-                        break
+                    # Looking for the name of dest_plug in dest_node
+                    dest_plug_name = None
+                    for plug_name_d, plug_d in dest_node.plugs.items():
+                        if plug_d == dest_plug:
+                            dest_plug_name = plug_name_d
+                            break
 
-                link_to_add = [(node_name, plug_name)]
-                link_to_add.append((dest_node_name, dest_plug_name))
-                link_to_add.append(active)
-                link_to_add.append(weak_link)
+                    link_to_add = [(node_name, plug_name)]
+                    link_to_add.append((dest_node_name, dest_plug_name))
+                    link_to_add.append(active)
+                    link_to_add.append(weak_link)
 
-                links.append(link_to_add)
+                    links.append(link_to_add)
+            else:
+                for link_from in plug.links_from:
+                    (source_node_name, source_parameter, source_node, source_plug,
+                     weak_link) = link_from
+                    active = plug.activated
 
-            for link_from in plug.links_from:
-                (source_node_name, source_parameter, source_node, source_plug,
-                 weak_link) = link_from
-                active = plug.activated
+                    # Looking for the name of source_plug in source_node
+                    source_plug_name = None
+                    for plug_name_d, plug_d in source_node.plugs.items():
+                        if plug_d == source_plug:
+                            source_plug_name = plug_name_d
+                            break
 
-                # Looking for the name of source_plug in source_node
-                source_plug_name = None
-                for plug_name_d, plug_d in source_node.plugs.items():
-                    if plug_d == source_plug:
-                        source_plug_name = plug_name_d
-                        break
+                    link_to_add = [(source_node_name, source_plug_name)]
+                    link_to_add.append((node_name, plug_name))
+                    link_to_add.append(active)
+                    link_to_add.append(weak_link)
 
-                link_to_add = [(source_node_name, source_plug_name)]
-                link_to_add.append((node_name, plug_name))
-                link_to_add.append(active)
-                link_to_add.append(weak_link)
-
-                links.append(link_to_add)
+                    links.append(link_to_add)
 
         # Calling the original method
         PipelineDevelopperView.del_node(self, node_name)

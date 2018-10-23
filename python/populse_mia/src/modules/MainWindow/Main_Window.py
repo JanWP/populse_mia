@@ -8,16 +8,17 @@
 
 import subprocess
 import os
+import webbrowser
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QWidget, QTabWidget, QVBoxLayout, QAction, QLineEdit, \
-    QMainWindow, QMessageBox, QMenu, QPushButton
+from PyQt5.QtWidgets import QWidget, QTabWidget, QVBoxLayout, QAction, QMainWindow, QMessageBox, QMenu, QPushButton
 from SoftwareProperties.SavedProjects import SavedProjects
 from SoftwareProperties.Config import Config
-import DataBrowser.DataBrowser
+from DataBrowser.DataBrowser import DataBrowser
 from ImageViewer.ImageViewer import ImageViewer
 from PipelineManager.PipelineManagerTab import PipelineManagerTab
+from PipelineManager.process_library import InstallProcesses
 from PopUps.Ui_Dialog_New_Project import Ui_Dialog_New_Project
 from PopUps.Ui_Dialog_Open_Project import Ui_Dialog_Open_Project
 from PopUps.Ui_Dialog_Preferences import Ui_Dialog_Preferences
@@ -128,6 +129,8 @@ class Main_Window(QMainWindow):
         self.action_redo = QAction('Redo', self)
         self.action_redo.setShortcut('Ctrl+Y')
 
+        self.action_documentation = QAction('Documentation', self)
+
         self.action_install_processes_folder = QAction('From folder', self)
         self.action_install_processes_zip = QAction('From zip file', self)
         # if Config().get_clinical_mode() == 'yes':
@@ -148,6 +151,7 @@ class Main_Window(QMainWindow):
         self.action_package_library.triggered.connect(self.package_library_pop_up)
         self.action_undo.triggered.connect(self.undo)
         self.action_redo.triggered.connect(self.redo)
+        self.action_documentation.triggered.connect(self.documentation)
         self.action_install_processes_folder.triggered.connect(lambda: self.install_processes_pop_up(folder=True))
         self.action_install_processes_zip.triggered.connect(lambda: self.install_processes_pop_up(folder=False))
 
@@ -192,7 +196,7 @@ class Main_Window(QMainWindow):
         self.menu_edition.addAction(self.action_redo)
 
         # Actions in the "Help" menu
-        self.menu_help.addAction('Documentations')
+        self.menu_help.addAction(self.action_documentation)
         self.menu_help.addAction('Credits')
 
         # Actions in the "More > Install processes" menu
@@ -312,11 +316,10 @@ class Main_Window(QMainWindow):
 
         self.tabs = QTabWidget()
         self.tabs.setAutoFillBackground(False)
-        #self.tabs.setStyleSheet('QTabBar{font-size:14pt;font-family:Helvetica;text-align: center;color:blue;}')
         self.tabs.setStyleSheet('QTabBar{font-size:16pt;text-align: center}')
         self.tabs.setMovable(True)
 
-        self.data_browser = DataBrowser.DataBrowser.DataBrowser(self.project, self)
+        self.data_browser = DataBrowser(self.project, self)
         self.tabs.addTab(self.data_browser, "Data Browser")
 
         self.image_viewer = ImageViewer()
@@ -412,6 +415,17 @@ class Main_Window(QMainWindow):
             self.project.saveModifications()
 
             self.update_project(file_name, call_update_table=False) # Project updated everywhere
+
+            # If some files have been set in the pipeline editors, display a warning message
+            if self.pipeline_manager.pipelineEditorTabs.has_pipeline_nodes():
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Warning)
+                msg.setText("This action moves the current database. All pipelines will need to be initialized "
+                            "again before they can run.")
+                msg.setWindowTitle("Warning")
+                msg.setStandardButtons(QMessageBox.Ok)
+                msg.buttonClicked.connect(msg.close)
+                msg.exec()
 
     def create_project_pop_up(self):
 
@@ -658,9 +672,13 @@ class Main_Window(QMainWindow):
         self.pop_up_package_library.show()
         self.pop_up_package_library.signal_save.connect(self.pipeline_manager.processLibrary.update_process_library)
 
+    @staticmethod
+    def documentation():
+        """ Opens the documentation in a web browser """
+        webbrowser.open('https://populse.github.io/populse_mia/html/index.html')
+
     def install_processes_pop_up(self, folder=False):
         """ Opens the install processes pop-up """
-        from PipelineManager.process_library import InstallProcesses
         self.pop_up_install_processes = InstallProcesses(self, folder=folder)
         self.pop_up_install_processes.show()
         self.pop_up_install_processes.process_installed.connect(self.pipeline_manager.processLibrary.update_process_library)
